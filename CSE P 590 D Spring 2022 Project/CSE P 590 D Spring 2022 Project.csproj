@@ -6,11 +6,19 @@
     <RootNamespace>CSE_P_590_D_Spring_2022_Project</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <UserSecretsId>e2e235b4-a359-4df8-8ca1-88a73f0c2bed</UserSecretsId>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="JOB Queries\*.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Dapper" Version="2.0.123" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="4.1.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="6.0.1" />
     <PackageReference Include="MySqlConnector" Version="2.1.9" />
     <PackageReference Include="Npgsql" Version="6.0.4" />
   </ItemGroup>
