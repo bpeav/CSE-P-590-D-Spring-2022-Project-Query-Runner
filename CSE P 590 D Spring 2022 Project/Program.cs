@@ -1,9 +1,12 @@
 ﻿// See https://aka.ms/new-console-template for more information
 
+using System.Collections;
+using System.Globalization;
 using System.Xml;
 using System.Xml.Linq;
 using System.Xml.Schema;
 using System.Xml.XPath;
+using CsvHelper;
 using Dapper;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
@@ -42,11 +45,46 @@ public class Worker : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        var queryStr = "SELECT MIN(chn.name) AS uncredited_voiced_character, MIN(t.title) AS russian_movie FROM char_name AS chn, cast_info AS ci, company_name AS cn, company_type AS ct, movie_companies AS mc, role_type AS rt, title AS t WHERE ci.note  like '%(voice)%' and ci.note like '%(uncredited)%' AND cn.country_code  = '[ru]' AND rt.role  = 'actor' AND t.production_year > 2005 AND t.id = mc.movie_id AND t.id = ci.movie_id AND ci.movie_id = mc.movie_id AND chn.id = ci.person_role_id AND rt.id = ci.role_id AND cn.id = mc.company_id AND ct.id = mc.company_type_id;";
-        var sqlServerCardinalities = await _dbQueryRunner.RunSqlServerQuery(queryStr, cancellationToken).ConfigureAwait(false);
-        var postgreSqlCardinalities = await _dbQueryRunner.RunPostgreSqlQuery(queryStr, cancellationToken).ConfigureAwait(false);
-        var mySqlCardinalities = await _dbQueryRunner.RunMySqlQuery(queryStr, cancellationToken).ConfigureAwait(false);
-        var mariaDbCardinalities = await _dbQueryRunner.RunMariaDbQuery(queryStr, cancellationToken).ConfigureAwait(false);
+        const string jobQueryDir = "./JOB Queries";
+        var jobQueryFilePaths = Directory.GetFiles(jobQueryDir);
+
+        var cardinalityData = new List<JobQueryCardinalityInfo>();
+
+        foreach (var jobQueryFilePath in jobQueryFilePaths)
+        {
+            var jobQueryId = Path.GetFileNameWithoutExtension(jobQueryFilePath);
+            var queryStr = await File.ReadAllTextAsync(jobQueryFilePath, cancellationToken).ConfigureAwait(false);
+
+            List<(double estimated, double actual)> sqlServerCardinalities, postgreSqlCardinalities, mySqlCardinalities, mariaDbCardinalities;
+
+            try
+            {
+                sqlServerCardinalities = await _dbQueryRunner.RunSqlServerQuery(queryStr, cancellationToken).ConfigureAwait(false);
+                postgreSqlCardinalities = await _dbQueryRunner.RunPostgreSqlQuery(queryStr, cancellationToken).ConfigureAwait(false);
+                mySqlCardinalities = await _dbQueryRunner.RunMySqlQuery(queryStr, cancellationToken).ConfigureAwait(false);
+                mariaDbCardinalities = await _dbQueryRunner.RunMariaDbQuery(queryStr, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
+                continue;
+            }
+
+            var sqlServerData = sqlServerCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.SqlServer, c.estimated, c.actual));
+            var postgreSqlData = postgreSqlCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.PostgreSql, c.estimated, c.actual));
+            var mySqlData = mySqlCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.MySql, c.estimated, c.actual));
+            var mariaDbData = mariaDbCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.MariaDb, c.estimated, c.actual));
+
+            cardinalityData.AddRange(sqlServerData);
+            cardinalityData.AddRange(postgreSqlData);
+            cardinalityData.AddRange(mySqlData);
+            cardinalityData.AddRange(mariaDbData);
+        }
+        
+        var testResultsDirectoryInfo = Directory.CreateDirectory("./TestResults/");
+        await using var writer = new StreamWriter(Path.Combine(testResultsDirectoryInfo.FullName, $"{DateTimeOffset.UtcNow.ToFileTime()}_testresults.csv"));
+        await using var csv = new CsvWriter(writer, CultureInfo.InvariantCulture);
+        await csv.WriteRecordsAsync(cardinalityData, cancellationToken);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -54,6 +92,16 @@ public class Worker : IHostedService
         throw new NotImplementedException();
     }
 }
+
+public static class DbSystemConsts
+{
+    public const string SqlServer = "MS SQL Server";
+    public const string PostgreSql = "PostgreSQL";
+    public const string MySql = "MySQL";
+    public const string MariaDb = "MariaDB";
+}
+
+public record JobQueryCardinalityInfo(string JobQueryId, string Database, double EstimatedCardinality, double ActualCardinality);
 
 public class DbQueryRunner
 {
