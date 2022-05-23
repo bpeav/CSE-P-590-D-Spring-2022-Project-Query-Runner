@@ -1,11 +1,6 @@
 ﻿// See https://aka.ms/new-console-template for more information
 
-using System.Collections;
 using System.Globalization;
-using System.Xml;
-using System.Xml.Linq;
-using System.Xml.Schema;
-using System.Xml.XPath;
 using CsvHelper;
 using Dapper;
 using Microsoft.Data.SqlClient;
