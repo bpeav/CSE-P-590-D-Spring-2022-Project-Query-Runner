@@ -48,6 +48,7 @@ public class Worker : IHostedService
         const string jobQueryDir = "./JOB Queries";
         var jobQueryFilePaths = Directory.GetFiles(jobQueryDir);
 
+        var skippedQueries = new List<string>();
         var cardinalityData = new List<JobQueryCardinalityInfo>();
 
         foreach (var jobQueryFilePath in jobQueryFilePaths)
@@ -67,6 +68,7 @@ public class Worker : IHostedService
             catch (Exception e)
             {
                 _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
+                skippedQueries.Add(jobQueryId);
                 continue;
             }
 
@@ -82,9 +84,13 @@ public class Worker : IHostedService
         }
         
         var testResultsDirectoryInfo = Directory.CreateDirectory("./TestResults/");
-        await using var writer = new StreamWriter(Path.Combine(testResultsDirectoryInfo.FullName, $"{DateTimeOffset.UtcNow.ToFileTime()}_testresults.csv"));
+        var fileTimeString = DateTimeOffset.UtcNow.ToFileTime().ToString();
+
+        await File.WriteAllTextAsync(Path.Combine(testResultsDirectoryInfo.FullName, $"{fileTimeString}_skipped_queries.txt"), string.Join(",\n", skippedQueries), cancellationToken).ConfigureAwait(false);
+
+        await using var writer = new StreamWriter(Path.Combine(testResultsDirectoryInfo.FullName, $"{fileTimeString}_test_results.csv"));
         await using var csv = new CsvWriter(writer, CultureInfo.InvariantCulture);
-        await csv.WriteRecordsAsync(cardinalityData, cancellationToken);
+        await csv.WriteRecordsAsync(cardinalityData, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
