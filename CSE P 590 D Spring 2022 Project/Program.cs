@@ -43,7 +43,7 @@ public class Worker : IHostedService
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         var queryStr = "SELECT MIN(chn.name) AS uncredited_voiced_character, MIN(t.title) AS russian_movie FROM char_name AS chn, cast_info AS ci, company_name AS cn, company_type AS ct, movie_companies AS mc, role_type AS rt, title AS t WHERE ci.note  like '%(voice)%' and ci.note like '%(uncredited)%' AND cn.country_code  = '[ru]' AND rt.role  = 'actor' AND t.production_year > 2005 AND t.id = mc.movie_id AND t.id = ci.movie_id AND ci.movie_id = mc.movie_id AND chn.id = ci.person_role_id AND rt.id = ci.role_id AND cn.id = mc.company_id AND ct.id = mc.company_type_id;";
-        await _dbQueryRunner.RunSqlServerQuery(queryStr, cancellationToken).ConfigureAwait(false);
+        var sqlServerCardinalities = await _dbQueryRunner.RunSqlServerQuery(queryStr, cancellationToken).ConfigureAwait(false);
         var postgreSqlCardinalities = await _dbQueryRunner.RunPostgreSqlQuery(queryStr, cancellationToken).ConfigureAwait(false);
         var mySqlCardinalities = await _dbQueryRunner.RunMySqlQuery(queryStr, cancellationToken).ConfigureAwait(false);
         var mariaDbCardinalities = await _dbQueryRunner.RunMariaDbQuery(queryStr, cancellationToken).ConfigureAwait(false);
@@ -67,23 +67,24 @@ public class DbQueryRunner
         this._databaseConnectionStringsOptions = _databaseConnectionStringsOptions;
     }
 
-    public async Task RunSqlServerQuery(string queryText, CancellationToken cancellationToken)
+    public async Task<List<(double estimated, double actual)>> RunSqlServerQuery(string queryText, CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(_databaseConnectionStringsOptions.Value.SqlServer);
 
         var gridReader = await connection
             .QueryMultipleAsync(new CommandDefinition(
-                commandText: $"SET STATISTICS XML ON; {queryText}; SET STATISTICS XML OFF;",
+                commandText: $"SET STATISTICS PROFILE ON; {queryText}; SET STATISTICS PROFILE OFF;",
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
         var queryResult = await gridReader.ReadAsync().ConfigureAwait(false);
         _logger.LogInformation("Output: {output}", System.Text.Json.JsonSerializer.Serialize(queryResult));
         
-        var executionPlanAndStats = await gridReader.ReadAsync<string>().ConfigureAwait(false);
-        var executionPlanXml = executionPlanAndStats.First();
-        var parsedExecutionPlan = XDocument.Parse(executionPlanXml);
-        _logger.LogInformation("Output: {output}", parsedExecutionPlan);
+        var executionPlanAndStats = await gridReader.ReadAsync().ConfigureAwait(false);
+        _logger.LogInformation("Output: {output}", executionPlanAndStats);
+
+        var cardinalities = executionPlanAndStats.Select(ep => ((double) ep.EstimateRows, (double) ep.Rows)).ToList();
+        return cardinalities;
     }
 
     public async Task<List<(double estimated, double actual)>> RunPostgreSqlQuery(string queryText, CancellationToken cancellationToken)
