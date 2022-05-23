@@ -44,8 +44,8 @@ public class Worker : IHostedService
     {
         var queryStr = "SELECT MIN(chn.name) AS uncredited_voiced_character, MIN(t.title) AS russian_movie FROM char_name AS chn, cast_info AS ci, company_name AS cn, company_type AS ct, movie_companies AS mc, role_type AS rt, title AS t WHERE ci.note  like '%(voice)%' and ci.note like '%(uncredited)%' AND cn.country_code  = '[ru]' AND rt.role  = 'actor' AND t.production_year > 2005 AND t.id = mc.movie_id AND t.id = ci.movie_id AND ci.movie_id = mc.movie_id AND chn.id = ci.person_role_id AND rt.id = ci.role_id AND cn.id = mc.company_id AND ct.id = mc.company_type_id;";
         await _dbQueryRunner.RunSqlServerQuery(queryStr, cancellationToken).ConfigureAwait(false);
-        await _dbQueryRunner.RunPostgreSqlQuery(queryStr, cancellationToken).ConfigureAwait(false);
-        await _dbQueryRunner.RunMySqlQuery(queryStr, cancellationToken).ConfigureAwait(false);
+        var postgreSqlCardinalities = await _dbQueryRunner.RunPostgreSqlQuery(queryStr, cancellationToken).ConfigureAwait(false);
+        var mySqlCardinalities = await _dbQueryRunner.RunMySqlQuery(queryStr, cancellationToken).ConfigureAwait(false);
         await _dbQueryRunner.RunMariaDbQuery(queryStr, cancellationToken).ConfigureAwait(false);
     }
 
@@ -86,7 +86,7 @@ public class DbQueryRunner
         _logger.LogInformation("Output: {output}", parsedExecutionPlan);
     }
 
-    public async Task RunPostgreSqlQuery(string queryText, CancellationToken cancellationToken)
+    public async Task<List<(int estimated, int actual)>> RunPostgreSqlQuery(string queryText, CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(_databaseConnectionStringsOptions.Value.PostgreSql);
 
@@ -97,9 +97,55 @@ public class DbQueryRunner
             .ConfigureAwait(false);
         
         _logger.LogInformation("Output: {output}", System.Text.Json.JsonSerializer.Serialize(queryExplainAnalyze));
+
+        var list = new List<(int, int)>();
+
+        foreach (var item in queryExplainAnalyze)
+        {
+            var idx = item.IndexOf("rows=");
+            if (idx == -1)
+            {
+                continue;
+            }
+
+            var startOfEstimatedRows = item.Substring(idx + 5);
+            var idx2 = startOfEstimatedRows.IndexOf(" ");
+            if (idx2 == -1)
+            {
+                continue;
+            }
+
+            if (!int.TryParse(startOfEstimatedRows.Substring(0, idx2), out var estimated))
+            {
+                continue;
+            }
+
+            
+            var idx3 = startOfEstimatedRows.IndexOf("rows=");
+            if (idx3 == -1)
+            {
+                continue;
+            }
+
+            var startOfRealRows = startOfEstimatedRows.Substring(idx3 + 5);
+            var idx4 = startOfRealRows.IndexOf(" ");
+            if (idx4 == -1)
+            {
+                continue;
+            }
+
+            if (!int.TryParse(startOfRealRows.Substring(0, idx4), out var actual))
+            {
+                continue;
+            }
+
+            list.Add((estimated, actual));
+        }
+
+        return list;
     }
 
-    public async Task RunMySqlQuery(string queryText, CancellationToken cancellationToken)
+    public async Task<List<(int estimated, int actual)>> RunMySqlQuery(string queryText, CancellationToken cancellationToken)
     {
         await using var connection = new MySqlConnection(_databaseConnectionStringsOptions.Value.MySql);
 
@@ -110,6 +156,56 @@ public class DbQueryRunner
             .ConfigureAwait(false);
         
         _logger.LogInformation("Output: {output}", queryExplainAnalyze);
+
+        var list = new List<(int, int)>();
+
+        var stringLeftToCheck = queryExplainAnalyze;
+
+        while (true)
+        {
+            var idx = stringLeftToCheck.IndexOf("rows=");
+            if (idx == -1)
+            {
+                break;
+            }
+
+            var startOfEstimatedRows = stringLeftToCheck.Substring(idx + 5);
+            var idx2 = startOfEstimatedRows.IndexOf(")");
+            if (idx2 == -1)
+            {
+                break;
+            }
+
+            if (!int.TryParse(startOfEstimatedRows.Substring(0, idx2), out var estimated))
+            {
+                break;
+            }
+
+            
+            var idx3 = startOfEstimatedRows.IndexOf("rows=");
+            if (idx3 == -1)
+            {
+                break;
+            }
+
+            var startOfRealRows = startOfEstimatedRows.Substring(idx3 + 5);
+            var idx4 = startOfRealRows.IndexOf(" ");
+            if (idx4 == -1)
+            {
+                break;
+            }
+
+            if (!int.TryParse(startOfRealRows.Substring(0, idx4), out var actual))
+            {
+                break;
+            }
+
+            list.Add((estimated, actual));
+
+            stringLeftToCheck = startOfRealRows;
+        }
+
+        return list;
     }
 
     public async Task RunMariaDbQuery(string queryText, CancellationToken cancellationToken)
