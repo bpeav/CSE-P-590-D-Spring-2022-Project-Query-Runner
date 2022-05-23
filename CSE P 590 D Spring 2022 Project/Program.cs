@@ -46,7 +46,7 @@ public class Worker : IHostedService
         await _dbQueryRunner.RunSqlServerQuery(queryStr, cancellationToken).ConfigureAwait(false);
         var postgreSqlCardinalities = await _dbQueryRunner.RunPostgreSqlQuery(queryStr, cancellationToken).ConfigureAwait(false);
         var mySqlCardinalities = await _dbQueryRunner.RunMySqlQuery(queryStr, cancellationToken).ConfigureAwait(false);
-        await _dbQueryRunner.RunMariaDbQuery(queryStr, cancellationToken).ConfigureAwait(false);
+        var mariaDbCardinalities = await _dbQueryRunner.RunMariaDbQuery(queryStr, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -86,7 +86,7 @@ public class DbQueryRunner
         _logger.LogInformation("Output: {output}", parsedExecutionPlan);
     }
 
-    public async Task<List<(int estimated, int actual)>> RunPostgreSqlQuery(string queryText, CancellationToken cancellationToken)
+    public async Task<List<(double estimated, double actual)>> RunPostgreSqlQuery(string queryText, CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(_databaseConnectionStringsOptions.Value.PostgreSql);
 
@@ -98,7 +98,7 @@ public class DbQueryRunner
         
         _logger.LogInformation("Output: {output}", System.Text.Json.JsonSerializer.Serialize(queryExplainAnalyze));
 
-        var list = new List<(int, int)>();
+        var list = new List<(double, double)>();
 
         foreach (var item in queryExplainAnalyze)
         {
@@ -115,7 +115,7 @@ public class DbQueryRunner
                 continue;
             }
 
-            if (!int.TryParse(startOfEstimatedRows.Substring(0, idx2), out var estimated))
+            if (!double.TryParse(startOfEstimatedRows.Substring(0, idx2), out var estimated))
             {
                 continue;
             }
@@ -134,7 +134,7 @@ public class DbQueryRunner
                 continue;
             }
 
-            if (!int.TryParse(startOfRealRows.Substring(0, idx4), out var actual))
+            if (!double.TryParse(startOfRealRows.Substring(0, idx4), out var actual))
             {
                 continue;
             }
@@ -145,7 +145,7 @@ public class DbQueryRunner
         return list;
     }
 
-    public async Task<List<(int estimated, int actual)>> RunMySqlQuery(string queryText, CancellationToken cancellationToken)
+    public async Task<List<(double estimated, double actual)>> RunMySqlQuery(string queryText, CancellationToken cancellationToken)
     {
         await using var connection = new MySqlConnection(_databaseConnectionStringsOptions.Value.MySql);
 
@@ -157,7 +157,7 @@ public class DbQueryRunner
         
         _logger.LogInformation("Output: {output}", queryExplainAnalyze);
 
-        var list = new List<(int, int)>();
+        var list = new List<(double, double)>();
 
         var stringLeftToCheck = queryExplainAnalyze;
 
@@ -176,7 +176,7 @@ public class DbQueryRunner
                 break;
             }
 
-            if (!int.TryParse(startOfEstimatedRows.Substring(0, idx2), out var estimated))
+            if (!double.TryParse(startOfEstimatedRows.Substring(0, idx2), out var estimated))
             {
                 break;
             }
@@ -195,7 +195,7 @@ public class DbQueryRunner
                 break;
             }
 
-            if (!int.TryParse(startOfRealRows.Substring(0, idx4), out var actual))
+            if (!double.TryParse(startOfRealRows.Substring(0, idx4), out var actual))
             {
                 break;
             }
@@ -208,17 +208,20 @@ public class DbQueryRunner
         return list;
     }
 
-    public async Task RunMariaDbQuery(string queryText, CancellationToken cancellationToken)
+    public async Task<List<(double estimated, double actual)>> RunMariaDbQuery(string queryText, CancellationToken cancellationToken)
     {
         await using var connection = new MySqlConnection(_databaseConnectionStringsOptions.Value.MariaDb);
 
-        var queryExplainAnalyze = await connection
-            .QuerySingleAsync<string>(new CommandDefinition(
-                commandText: $"ANALYZE FORMAT=JSON {queryText}",
+        var queryExplainAnalyzeResults = await connection
+            .QueryAsync(new CommandDefinition(
+                commandText: $"ANALYZE {queryText}",
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
-        _logger.LogInformation("Output: {output}", queryExplainAnalyze);
+        _logger.LogInformation("Output: {output}", queryExplainAnalyzeResults);
+
+        var cardinalities = queryExplainAnalyzeResults.Select(q => ((double) q.rows, (double) q.r_rows)).ToList();
+        return cardinalities;
     }
 }
 
