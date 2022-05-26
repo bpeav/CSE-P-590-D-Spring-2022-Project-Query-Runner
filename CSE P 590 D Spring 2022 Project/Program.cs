@@ -1,5 +1,6 @@
 ﻿// See https://aka.ms/new-console-template for more information
 
+using System.Data;
 using System.Globalization;
 using CsvHelper;
 using Dapper;
@@ -42,6 +43,12 @@ public class Worker : IHostedService
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        await _dbQueryRunner.CollectSqlServerStats(cancellationToken).ConfigureAwait(false);
+        await _dbQueryRunner.CollectPostgreSqlStats(cancellationToken).ConfigureAwait(false);
+        await _dbQueryRunner.CollectMySqlStats(cancellationToken).ConfigureAwait(false);
+        await _dbQueryRunner.CollectMariaDbStats(cancellationToken).ConfigureAwait(false);
+
+
         const string jobQueryDir = "./JOB Queries";
         var jobQueryFilePaths = Directory.GetFiles(jobQueryDir);
 
@@ -69,10 +76,50 @@ public class Worker : IHostedService
                 continue;
             }
 
-            var sqlServerData = sqlServerCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.SqlServer, c.estimated, c.actual));
-            var postgreSqlData = postgreSqlCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.PostgreSql, c.estimated, c.actual));
-            var mySqlData = mySqlCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.MySql, c.estimated, c.actual));
-            var mariaDbData = mariaDbCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.MariaDb, c.estimated, c.actual));
+            var sqlServerData = sqlServerCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.SqlServer, c.estimated, c.actual, false));
+            var postgreSqlData = postgreSqlCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.PostgreSql, c.estimated, c.actual, false));
+            var mySqlData = mySqlCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.MySql, c.estimated, c.actual, false));
+            var mariaDbData = mariaDbCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.MariaDb, c.estimated, c.actual, false));
+
+            cardinalityData.AddRange(sqlServerData);
+            cardinalityData.AddRange(postgreSqlData);
+            cardinalityData.AddRange(mySqlData);
+            cardinalityData.AddRange(mariaDbData);
+        }
+
+        foreach (var jobQueryFilePath in jobQueryFilePaths)
+        {
+            var jobQueryId = Path.GetFileNameWithoutExtension(jobQueryFilePath);
+            var queryStr = await File.ReadAllTextAsync(jobQueryFilePath, cancellationToken).ConfigureAwait(false);
+            var fromStart = queryStr.IndexOf("FROM ");
+            if (fromStart == -1)
+            {
+                continue;
+            }
+
+            var fromQueryOnly = queryStr.Substring(fromStart);
+            var countQuery = "SELECT COUNT(*) " + fromQueryOnly;
+
+            List<(double estimated, double actual)> sqlServerCardinalities, postgreSqlCardinalities, mySqlCardinalities, mariaDbCardinalities;
+
+            try
+            {
+                sqlServerCardinalities = await _dbQueryRunner.RunSqlServerQuery(countQuery, cancellationToken).ConfigureAwait(false);
+                postgreSqlCardinalities = await _dbQueryRunner.RunPostgreSqlQuery(countQuery, cancellationToken).ConfigureAwait(false);
+                mySqlCardinalities = await _dbQueryRunner.RunMySqlQuery(countQuery, cancellationToken).ConfigureAwait(false);
+                mariaDbCardinalities = await _dbQueryRunner.RunMariaDbQuery(countQuery, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
+                skippedQueries.Add(jobQueryId);
+                continue;
+            }
+
+            var sqlServerData = sqlServerCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.SqlServer, c.estimated, c.actual, true));
+            var postgreSqlData = postgreSqlCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.PostgreSql, c.estimated, c.actual, true));
+            var mySqlData = mySqlCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.MySql, c.estimated, c.actual, true));
+            var mariaDbData = mariaDbCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.MariaDb, c.estimated, c.actual, true));
 
             cardinalityData.AddRange(sqlServerData);
             cardinalityData.AddRange(postgreSqlData);
@@ -104,7 +151,7 @@ public static class DbSystemConsts
     public const string MariaDb = "MariaDB";
 }
 
-public record JobQueryCardinalityInfo(string JobQueryId, string Database, double EstimatedCardinality, double ActualCardinality);
+public record JobQueryCardinalityInfo(string JobQueryId, string Database, double EstimatedCardinality, double ActualCardinality, bool IsCountQuery);
 
 public class DbQueryRunner
 {
@@ -116,6 +163,90 @@ public class DbQueryRunner
     {
         _logger = logger;
         this._databaseConnectionStringsOptions = _databaseConnectionStringsOptions;
+    }
+
+    public async Task CollectSqlServerStats(CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(_databaseConnectionStringsOptions.Value.SqlServer);
+
+        var commandResult = await connection
+            .ExecuteAsync(new CommandDefinition(
+                commandText: "EXEC sp_updatestats;",
+                commandType: CommandType.StoredProcedure,
+                cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+        
+        _logger.LogInformation("Output: {output}", commandResult);
+    }
+
+    public async Task CollectPostgreSqlStats(CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(_databaseConnectionStringsOptions.Value.PostgreSql);
+
+        var commandResult = await connection
+            .ExecuteAsync(new CommandDefinition(
+                commandText: "ANALYZE",
+                cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+        
+        _logger.LogInformation("Output: {output}", commandResult);
+    }
+
+    private static string[] _tableNames =
+    {
+        "aka_name",
+        "aka_title",
+        "cast_info",
+        "char_name",
+        "comp_cast_type",
+        "company_name",
+        "company_type",
+        "complete_cast",
+        "info_type",
+        "keyword",
+        "kind_type",
+        "link_type",
+        "movie_companies",
+        "movie_info",
+        "movie_info_idx",
+        "movie_keyword",
+        "movie_link",
+        "name",
+        "person_info",
+        "role_type",
+        "title"
+    };
+
+    public async Task CollectMySqlStats(CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_databaseConnectionStringsOptions.Value.MySql);
+
+        foreach (var tableName in _tableNames)
+        {
+            var commandResult = await connection
+                .ExecuteAsync(new CommandDefinition(
+                    commandText: $"ANALYZE TABLE {tableName}",
+                    cancellationToken: cancellationToken))
+                .ConfigureAwait(false);
+
+            _logger.LogInformation("Output: {output}", commandResult);
+        }
+    }
+
+    public async Task CollectMariaDbStats(CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_databaseConnectionStringsOptions.Value.MariaDb);
+
+        foreach (var tableName in _tableNames)
+        {
+            var commandResult = await connection
+                .ExecuteAsync(new CommandDefinition(
+                    commandText: $"ANALYZE TABLE {tableName}",
+                    cancellationToken: cancellationToken))
+                .ConfigureAwait(false);
+
+            _logger.LogInformation("Output: {output}", commandResult);
+        }
     }
 
     public async Task<List<(double estimated, double actual)>> RunSqlServerQuery(string queryText, CancellationToken cancellationToken)
