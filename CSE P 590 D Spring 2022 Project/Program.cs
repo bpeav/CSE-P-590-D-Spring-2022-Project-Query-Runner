@@ -98,7 +98,7 @@ public class Worker : IHostedService
             }
 
             var fromQueryOnly = queryStr.Substring(fromStart);
-            var countQuery = "SELECT COUNT(*) " + fromQueryOnly;
+            var countQuery = "SELECT * " + fromQueryOnly;
 
             List<(double estimated, double actual)> sqlServerCardinalities, postgreSqlCardinalities, mySqlCardinalities, mariaDbCardinalities;
 
@@ -151,7 +151,7 @@ public static class DbSystemConsts
     public const string MariaDb = "MariaDB";
 }
 
-public record JobQueryCardinalityInfo(string JobQueryId, string Database, double EstimatedCardinality, double ActualCardinality, bool IsCountQuery);
+public record JobQueryCardinalityInfo(string JobQueryId, string Database, double EstimatedCardinality, double ActualCardinality, bool IsSelectStarQuery);
 
 public class DbQueryRunner
 {
