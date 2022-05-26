@@ -157,6 +157,9 @@ public class DbQueryRunner
 {
     private readonly ILogger<DbQueryRunner> _logger;
     private readonly IOptions<DatabaseConnectionStrings> _databaseConnectionStringsOptions;
+    
+    private const int StatsCommandTimeoutInSeconds = 600;
+    private const int QueryCommandTimeoutInSeconds = 120;
 
     public DbQueryRunner(ILogger<DbQueryRunner> logger,
         IOptions<DatabaseConnectionStrings> _databaseConnectionStringsOptions)
@@ -173,6 +176,7 @@ public class DbQueryRunner
             .ExecuteAsync(new CommandDefinition(
                 commandText: "EXEC sp_updatestats;",
                 commandType: CommandType.StoredProcedure,
+                commandTimeout:StatsCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -186,6 +190,7 @@ public class DbQueryRunner
         var commandResult = await connection
             .ExecuteAsync(new CommandDefinition(
                 commandText: "ANALYZE",
+                commandTimeout:StatsCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -226,6 +231,7 @@ public class DbQueryRunner
             var commandResult = await connection
                 .ExecuteAsync(new CommandDefinition(
                     commandText: $"ANALYZE TABLE {tableName}",
+                    commandTimeout:StatsCommandTimeoutInSeconds,
                     cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
 
@@ -242,6 +248,7 @@ public class DbQueryRunner
             var commandResult = await connection
                 .ExecuteAsync(new CommandDefinition(
                     commandText: $"ANALYZE TABLE {tableName}",
+                    commandTimeout:StatsCommandTimeoutInSeconds,
                     cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
 
@@ -256,6 +263,7 @@ public class DbQueryRunner
         var gridReader = await connection
             .QueryMultipleAsync(new CommandDefinition(
                 commandText: $"SET STATISTICS PROFILE ON; {queryText}; SET STATISTICS PROFILE OFF;",
+                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -276,6 +284,7 @@ public class DbQueryRunner
         var queryExplainAnalyze = await connection
             .QueryAsync<string>(new CommandDefinition(
                 commandText: $"EXPLAIN ANALYZE {queryText}",
+                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -335,6 +344,7 @@ public class DbQueryRunner
         var queryExplainAnalyze = await connection
             .QuerySingleAsync<string>(new CommandDefinition(
                 commandText: $"EXPLAIN ANALYZE {queryText}",
+                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -398,6 +408,7 @@ public class DbQueryRunner
         var queryExplainAnalyzeResults = await connection
             .QueryAsync(new CommandDefinition(
                 commandText: $"ANALYZE {queryText}",
+                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
