@@ -159,7 +159,7 @@ public class DbQueryRunner
     private readonly IOptions<DatabaseConnectionStrings> _databaseConnectionStringsOptions;
     
     private const int StatsCommandTimeoutInSeconds = 600;
-    private const int QueryCommandTimeoutInSeconds = 120;
+    private const int QueryCommandTimeoutInSeconds = 180;
 
     public DbQueryRunner(ILogger<DbQueryRunner> logger,
         IOptions<DatabaseConnectionStrings> _databaseConnectionStringsOptions)
