@@ -24,7 +24,8 @@ await Host.CreateDefaultBuilder(args).ConfigureHostConfiguration(configHost =>
 
         services.AddOptions<DatabaseConnectionStrings>()
             //.BindConfiguration("DatabaseConnectionStrings");
-            .BindConfiguration("AzureDatabaseConnectionStrings");
+            //.BindConfiguration("AzureDatabaseConnectionStrings");
+            .BindConfiguration("ExperimentConnectionStrings");
 
         services.AddSingleton<DbQueryRunner>();
     })
