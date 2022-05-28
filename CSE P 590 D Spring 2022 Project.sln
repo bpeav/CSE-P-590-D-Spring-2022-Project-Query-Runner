@@ -8,6 +8,13 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{ECEFDE8F-09B1-4F9E-835D-56FEDD68EA42}"
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
+		README.md = README.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "ARM", "ARM", "{2C2132F1-4F9C-4824-B076-B66D95891920}"
+	ProjectSection(SolutionItems) = preProject
+		ARM\parameters.json = ARM\parameters.json
+		ARM\template.json = ARM\template.json
 	EndProjectSection
 EndProject
 Global
@@ -23,6 +30,9 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{2C2132F1-4F9C-4824-B076-B66D95891920} = {ECEFDE8F-09B1-4F9E-835D-56FEDD68EA42}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {383B269F-0C79-46A2-9C71-FEA5037A1EB8}
