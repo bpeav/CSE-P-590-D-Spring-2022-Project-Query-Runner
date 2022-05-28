@@ -174,8 +174,7 @@ public class DbQueryRunner
 
         var commandResult = await connection
             .ExecuteAsync(new CommandDefinition(
-                commandText: "EXEC sp_updatestats;",
-                commandType: CommandType.StoredProcedure,
+                commandText: "EXEC sys.sp_updatestats;",
                 commandTimeout:StatsCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
