@@ -358,6 +358,7 @@ public class DbQueryRunner
         var commandResult = await connection
             .ExecuteAsync(new CommandDefinition(
                 commandText: "EXEC sys.sp_updatestats;",
+                commandTimeout:StatsCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -371,6 +372,7 @@ public class DbQueryRunner
         var commandResult = await connection
             .ExecuteAsync(new CommandDefinition(
                 commandText: "ANALYZE",
+                commandTimeout:StatsCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -411,6 +413,7 @@ public class DbQueryRunner
             var commandResult = await connection
                 .ExecuteAsync(new CommandDefinition(
                     commandText: $"ANALYZE TABLE {tableName}",
+                    commandTimeout:StatsCommandTimeoutInSeconds,
                     cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
 
@@ -427,6 +430,7 @@ public class DbQueryRunner
             var commandResult = await connection
                 .ExecuteAsync(new CommandDefinition(
                     commandText: $"ANALYZE TABLE {tableName}",
+                    commandTimeout:StatsCommandTimeoutInSeconds,
                     cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
 
