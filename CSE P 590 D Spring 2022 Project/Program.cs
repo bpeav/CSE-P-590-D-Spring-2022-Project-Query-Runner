@@ -445,11 +445,15 @@ public class DbQueryRunner
         var gridReader = await connection
             .QueryMultipleAsync(new CommandDefinition(
                 commandText: $"SET STATISTICS PROFILE ON; {queryText}; SET STATISTICS PROFILE OFF;",
+                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
-        
+
         var queryResult = await gridReader.ReadAsync().ConfigureAwait(false);
-        _logger.LogInformation("Output: {output}", System.Text.Json.JsonSerializer.Serialize(queryResult));
+        var firstResult = queryResult?.FirstOrDefault();
+        string logString = firstResult == null ? "null query result" : System.Text.Json.JsonSerializer.Serialize(firstResult);
+        
+        _logger.LogInformation("Output: {output}", logString);
         
         var executionPlanAndStats = await gridReader.ReadAsync().ConfigureAwait(false);
         _logger.LogInformation("Output: {output}", executionPlanAndStats);
@@ -465,6 +469,7 @@ public class DbQueryRunner
         var queryExplainAnalyze = await connection
             .QueryAsync<string>(new CommandDefinition(
                 commandText: $"EXPLAIN ANALYZE {queryText}",
+                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -524,6 +529,7 @@ public class DbQueryRunner
         var queryExplainAnalyze = await connection
             .QuerySingleAsync<string>(new CommandDefinition(
                 commandText: $"EXPLAIN ANALYZE {queryText}",
+                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -587,12 +593,13 @@ public class DbQueryRunner
         var queryExplainAnalyzeResults = await connection
             .QueryAsync(new CommandDefinition(
                 commandText: $"ANALYZE {queryText}",
+                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
         _logger.LogInformation("Output: {output}", queryExplainAnalyzeResults);
 
-        var cardinalities = queryExplainAnalyzeResults.Select(q => ((double) q.rows, (double) q.r_rows)).ToList();
+        var cardinalities = queryExplainAnalyzeResults.Select(q => ((double) (q.rows ?? -1.0), (double) (q.r_rows ?? -1.0))).ToList();
         return cardinalities;
     }
 
@@ -603,6 +610,7 @@ public class DbQueryRunner
         var count = await connection
             .QuerySingleAsync<int>(new CommandDefinition(
                 commandText: queryText,
+                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
 
@@ -618,6 +626,7 @@ public class DbQueryRunner
         var count = await connection
             .QuerySingleAsync<int>(new CommandDefinition(
                 commandText: queryText,
+                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
 
@@ -633,6 +642,7 @@ public class DbQueryRunner
         var count = await connection
             .QuerySingleAsync<int>(new CommandDefinition(
                 commandText: queryText,
+                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
 
@@ -648,6 +658,7 @@ public class DbQueryRunner
         var count = await connection
             .QuerySingleAsync<int>(new CommandDefinition(
                 commandText: queryText,
+                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
 
