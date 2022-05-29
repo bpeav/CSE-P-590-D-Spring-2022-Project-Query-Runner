@@ -53,7 +53,7 @@ public class Worker : IHostedService
         const string jobQueryDir = "./JOB Queries";
         var jobQueryFilePaths = Directory.GetFiles(jobQueryDir);
 
-        var skippedQueries = new List<string>();
+        var skippedQueries = new List<SkippedQueryInfo>();
         var cardinalityData = new List<JobQueryCardinalityInfo>();
 
         foreach (var jobQueryFilePath in jobQueryFilePaths)
@@ -61,20 +61,46 @@ public class Worker : IHostedService
             var jobQueryId = Path.GetFileNameWithoutExtension(jobQueryFilePath);
             var queryStr = await File.ReadAllTextAsync(jobQueryFilePath, cancellationToken).ConfigureAwait(false);
 
-            List<(double estimated, double actual)> sqlServerCardinalities, postgreSqlCardinalities, mySqlCardinalities, mariaDbCardinalities;
-
+            List<(double estimated, double actual)> sqlServerCardinalities = new(), postgreSqlCardinalities = new(), mySqlCardinalities = new(), mariaDbCardinalities = new();
+            
             try
             {
                 sqlServerCardinalities = await _dbQueryRunner.RunSqlServerQuery(queryStr, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
+                skippedQueries.Add(new SkippedQueryInfo(jobQueryId, DbSystemConsts.SqlServer, e.ToString(), QueryTypeConsts.Original));
+            }
+
+            try
+            {
                 postgreSqlCardinalities = await _dbQueryRunner.RunPostgreSqlQuery(queryStr, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
+                skippedQueries.Add(new SkippedQueryInfo(jobQueryId, DbSystemConsts.PostgreSql, e.ToString(), QueryTypeConsts.Original));
+            }
+
+            try
+            {
                 mySqlCardinalities = await _dbQueryRunner.RunMySqlQuery(queryStr, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
+                skippedQueries.Add(new SkippedQueryInfo(jobQueryId, DbSystemConsts.MySql, e.ToString(), QueryTypeConsts.Original));
+            }
+
+            try
+            {
                 mariaDbCardinalities = await _dbQueryRunner.RunMariaDbQuery(queryStr, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception e)
             {
                 _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
-                skippedQueries.Add(jobQueryId);
-                continue;
+                skippedQueries.Add(new SkippedQueryInfo(jobQueryId, DbSystemConsts.MariaDb, e.ToString(), QueryTypeConsts.Original));
             }
 
             var sqlServerData = sqlServerCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.SqlServer, c.estimated, c.actual, false));
@@ -99,22 +125,48 @@ public class Worker : IHostedService
             }
 
             var fromQueryOnly = queryStr.Substring(fromStart);
-            var countQuery = "SELECT * " + fromQueryOnly;
+            var selectStarQuery = "SELECT * " + fromQueryOnly;
 
-            List<(double estimated, double actual)> sqlServerCardinalities, postgreSqlCardinalities, mySqlCardinalities, mariaDbCardinalities;
+            List<(double estimated, double actual)> sqlServerCardinalities = new(), postgreSqlCardinalities = new(), mySqlCardinalities = new(), mariaDbCardinalities = new();
 
             try
             {
-                sqlServerCardinalities = await _dbQueryRunner.RunSqlServerQuery(countQuery, cancellationToken).ConfigureAwait(false);
-                postgreSqlCardinalities = await _dbQueryRunner.RunPostgreSqlQuery(countQuery, cancellationToken).ConfigureAwait(false);
-                mySqlCardinalities = await _dbQueryRunner.RunMySqlQuery(countQuery, cancellationToken).ConfigureAwait(false);
-                mariaDbCardinalities = await _dbQueryRunner.RunMariaDbQuery(countQuery, cancellationToken).ConfigureAwait(false);
+                sqlServerCardinalities = await _dbQueryRunner.RunSqlServerQuery(selectStarQuery, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception e)
             {
                 _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
-                skippedQueries.Add(jobQueryId);
-                continue;
+                skippedQueries.Add(new SkippedQueryInfo(jobQueryId, DbSystemConsts.SqlServer, e.ToString(), QueryTypeConsts.SelectStar));
+            }
+
+            try
+            {
+                postgreSqlCardinalities = await _dbQueryRunner.RunPostgreSqlQuery(selectStarQuery, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
+                skippedQueries.Add(new SkippedQueryInfo(jobQueryId, DbSystemConsts.PostgreSql, e.ToString(), QueryTypeConsts.SelectStar));
+            }
+
+            try
+            {
+                mySqlCardinalities = await _dbQueryRunner.RunMySqlQuery(selectStarQuery, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
+                skippedQueries.Add(new SkippedQueryInfo(jobQueryId, DbSystemConsts.MySql, e.ToString(), QueryTypeConsts.SelectStar));
+            }
+
+            try
+            {
+                mariaDbCardinalities = await _dbQueryRunner.RunMariaDbQuery(selectStarQuery, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
+                skippedQueries.Add(new SkippedQueryInfo(jobQueryId, DbSystemConsts.MariaDb, e.ToString(), QueryTypeConsts.SelectStar));
             }
 
             var sqlServerData = sqlServerCardinalities.Select(c => new JobQueryCardinalityInfo(jobQueryId, DbSystemConsts.SqlServer, c.estimated, c.actual, true));
@@ -127,21 +179,128 @@ public class Worker : IHostedService
             cardinalityData.AddRange(mySqlData);
             cardinalityData.AddRange(mariaDbData);
         }
+
+        var jobCountQueryData = new List<JobCountQueryInfo>();
+
+        foreach (var jobQueryFilePath in jobQueryFilePaths)
+        {
+            var jobQueryId = Path.GetFileNameWithoutExtension(jobQueryFilePath);
+            var queryStr = await File.ReadAllTextAsync(jobQueryFilePath, cancellationToken).ConfigureAwait(false);
+            var fromStart = queryStr.IndexOf("FROM ");
+            if (fromStart == -1)
+            {
+                continue;
+            }
+
+            var fromQueryOnly = queryStr.Substring(fromStart);
+            var countQuery = "SELECT COUNT(*) " + fromQueryOnly;
+
+            int sqlServerCount = -1, postgreSqlCount = -1, mySqlCount = -1, mariaDbCount = -1;
+
+            try
+            {
+                sqlServerCount = await _dbQueryRunner.RunSqlServerCountQuery(countQuery, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
+                skippedQueries.Add(new SkippedQueryInfo(jobQueryId, DbSystemConsts.SqlServer, e.ToString(), QueryTypeConsts.Count));
+            }
+
+            try
+            {
+                postgreSqlCount = await _dbQueryRunner.RunPostgreSqlCountQuery(countQuery, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
+                skippedQueries.Add(new SkippedQueryInfo(jobQueryId, DbSystemConsts.PostgreSql, e.ToString(), QueryTypeConsts.Count));
+            }
+
+            try
+            {
+                mySqlCount = await _dbQueryRunner.RunMySqlCountQuery(countQuery, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
+                skippedQueries.Add(new SkippedQueryInfo(jobQueryId, DbSystemConsts.MySql, e.ToString(), QueryTypeConsts.Count));
+            }
+
+            try
+            {
+                mariaDbCount = await _dbQueryRunner.RunMariaDbCountQuery(countQuery, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(e, "Error occurred for Job Query {jobQueryId} - skipping this query in results", jobQueryId);
+                skippedQueries.Add(new SkippedQueryInfo(jobQueryId, DbSystemConsts.MariaDb, e.ToString(), QueryTypeConsts.Count));
+            }
+
+            jobCountQueryData.Add(new JobCountQueryInfo(jobQueryId, DbSystemConsts.SqlServer, sqlServerCount));
+            jobCountQueryData.Add(new JobCountQueryInfo(jobQueryId, DbSystemConsts.PostgreSql, postgreSqlCount));
+            jobCountQueryData.Add(new JobCountQueryInfo(jobQueryId, DbSystemConsts.MySql, mySqlCount));
+            jobCountQueryData.Add(new JobCountQueryInfo(jobQueryId, DbSystemConsts.MariaDb, mariaDbCount));
+        }
         
         var testResultsDirectoryInfo = Directory.CreateDirectory("./TestResults/");
         var fileTimeString = DateTimeOffset.UtcNow.ToFileTime().ToString();
 
-        await File.WriteAllTextAsync(Path.Combine(testResultsDirectoryInfo.FullName, $"{fileTimeString}_skipped_queries.txt"), string.Join(",\n", skippedQueries), cancellationToken).ConfigureAwait(false);
+        await using var cardinalityWriter = new StreamWriter(Path.Combine(testResultsDirectoryInfo.FullName, $"{fileTimeString}_cardinality_test_results.csv"));
+        await using var cardinalityCsv = new CsvWriter(cardinalityWriter, CultureInfo.InvariantCulture);
+        await cardinalityCsv.WriteRecordsAsync(cardinalityData, cancellationToken).ConfigureAwait(false);
 
-        await using var writer = new StreamWriter(Path.Combine(testResultsDirectoryInfo.FullName, $"{fileTimeString}_test_results.csv"));
-        await using var csv = new CsvWriter(writer, CultureInfo.InvariantCulture);
-        await csv.WriteRecordsAsync(cardinalityData, cancellationToken).ConfigureAwait(false);
+        await using var countWriter = new StreamWriter(Path.Combine(testResultsDirectoryInfo.FullName, $"{fileTimeString}_count_test_results.csv"));
+        await using var countCsv = new CsvWriter(countWriter, CultureInfo.InvariantCulture);
+        await countCsv.WriteRecordsAsync(cardinalityData, cancellationToken).ConfigureAwait(false);
+
+        await using var skippedWriter = new StreamWriter(Path.Combine(testResultsDirectoryInfo.FullName, $"{fileTimeString}_skipped_test_results.csv"));
+        await using var skippedCsv = new CsvWriter(skippedWriter, CultureInfo.InvariantCulture);
+        await skippedCsv.WriteRecordsAsync(cardinalityData, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         throw new NotImplementedException();
     }
+
+    //private static IEnumerable<JobQueryExperimentResult> AggregateExperimentResults(
+    //    List<JobQueryCardinalityInfo> jobQueryCardinalityData, List<JobCountQueryInfo> jobCountQueryData,
+    //    List<SkippedQueryInfo> skippedQueryData)
+    //{
+    //    const string jobQueryDir = "./JOB Queries";
+    //    var jobQueryFilePaths = Directory.GetFiles(jobQueryDir);
+    //    var jobQueryIds = jobQueryFilePaths.Select(Path.GetFileNameWithoutExtension);
+
+    //    var jobQueryCardinalityDataDictionary = jobQueryCardinalityData.ToDictionary(jqci => (jqci.JobQueryId, jqci.Database, jqci.IsSelectStarQuery));
+    //    var jobCountQueryDataDictionary = jobCountQueryData.ToDictionary(jcqi => (jcqi.JobQueryId, jcqi.Database));
+    //    var skippedQueryDataDictionary = skippedQueryData.ToDictionary(sqi => (sqi.JobQueryId, sqi.Database, sqi.QueryType));
+
+    //    foreach (var jobQueryId in jobQueryIds)
+    //    {
+    //        var currentDb = DbSystemConsts.SqlServer;
+    //        var hasOriginalQueryCardinalityInfo = jobQueryCardinalityDataDictionary.TryGetValue((jobQueryId, currentDb, false), out var originalQueryCardinalityInfo);
+    //        var hasOriginalSkippedQueryInfo = skippedQueryDataDictionary.TryGetValue((jobQueryId, currentDb, QueryTypeConsts.Original), out var originalSkippedQueryInfo);
+    //        var hasSelectStarQueryCardinalityInfo = jobQueryCardinalityDataDictionary.TryGetValue((jobQueryId, currentDb, true), out var selectStarQueryCardinalityInfo);
+    //        var hasSelectStarSkippedQueryInfo = skippedQueryDataDictionary.TryGetValue((jobQueryId, currentDb, QueryTypeConsts.SelectStar), out var selectStarSkippedQueryInfo);
+    //        var hasCountQueryInfo = jobCountQueryDataDictionary.TryGetValue((jobQueryId, currentDb), out var countQueryInfo);
+    //        var hasCountSkippedQueryInfo = skippedQueryDataDictionary.TryGetValue((jobQueryId, currentDb, QueryTypeConsts.Count), out var countSkippedQueryInfo);
+
+    //        yield return new JobQueryExperimentResult
+    //        {
+    //            JobQueryId = jobQueryId,
+    //            Database = currentDb,
+    //            OriginalJobQueryEstimatedCardinality = hasOriginalQueryCardinalityInfo ? originalQueryCardinalityInfo.EstimatedCardinality : -1,
+    //            OriginalJobQueryActualCardinality = hasOriginalQueryCardinalityInfo ? originalQueryCardinalityInfo.ActualCardinality : -1,
+    //            SelectStarJobQueryEstimatedCardinality = hasSelectStarQueryCardinalityInfo ? selectStarQueryCardinalityInfo.EstimatedCardinality : -1,
+    //            SelectStarJobQueryActualCardinality = hasSelectStarQueryCardinalityInfo ? selectStarQueryCardinalityInfo.ActualCardinality : -1,
+    //            CountQueryResult = hasCountQueryInfo
+    //            OriginalJobQueryError = "",
+    //            SelectStarQueryError = "",
+    //            CountQueryError = ""
+    //        };
+    //    }
+    //}
 }
 
 public static class DbSystemConsts
@@ -152,7 +311,30 @@ public static class DbSystemConsts
     public const string MariaDb = "MariaDB";
 }
 
+public static class QueryTypeConsts
+{
+    public const string Original = "Original";
+    public const string SelectStar = "SelectStar";
+    public const string Count = "Count";
+}
+
 public record JobQueryCardinalityInfo(string JobQueryId, string Database, double EstimatedCardinality, double ActualCardinality, bool IsSelectStarQuery);
+public record SkippedQueryInfo(string JobQueryId, string Database, string Exception, string QueryType);
+public record JobCountQueryInfo(string JobQueryId, string Database, int Count);
+public record JobQueryExperimentResult
+{
+    public string JobQueryId;
+    public string Database;
+    public double OriginalJobQueryEstimatedCardinality;
+    public double OriginalJobQueryActualCardinality;
+    public double SelectStarJobQueryEstimatedCardinality;
+    public double SelectStarJobQueryActualCardinality;
+    public int CountQueryResult;
+    public string OriginalJobQueryError;
+    public string SelectStarQueryError;
+    public string CountQueryError;
+}
+
 
 public class DbQueryRunner
 {
@@ -176,7 +358,6 @@ public class DbQueryRunner
         var commandResult = await connection
             .ExecuteAsync(new CommandDefinition(
                 commandText: "EXEC sys.sp_updatestats;",
-                commandTimeout:StatsCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -190,7 +371,6 @@ public class DbQueryRunner
         var commandResult = await connection
             .ExecuteAsync(new CommandDefinition(
                 commandText: "ANALYZE",
-                commandTimeout:StatsCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -231,7 +411,6 @@ public class DbQueryRunner
             var commandResult = await connection
                 .ExecuteAsync(new CommandDefinition(
                     commandText: $"ANALYZE TABLE {tableName}",
-                    commandTimeout:StatsCommandTimeoutInSeconds,
                     cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
 
@@ -248,7 +427,6 @@ public class DbQueryRunner
             var commandResult = await connection
                 .ExecuteAsync(new CommandDefinition(
                     commandText: $"ANALYZE TABLE {tableName}",
-                    commandTimeout:StatsCommandTimeoutInSeconds,
                     cancellationToken: cancellationToken))
                 .ConfigureAwait(false);
 
@@ -263,7 +441,6 @@ public class DbQueryRunner
         var gridReader = await connection
             .QueryMultipleAsync(new CommandDefinition(
                 commandText: $"SET STATISTICS PROFILE ON; {queryText}; SET STATISTICS PROFILE OFF;",
-                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -284,7 +461,6 @@ public class DbQueryRunner
         var queryExplainAnalyze = await connection
             .QueryAsync<string>(new CommandDefinition(
                 commandText: $"EXPLAIN ANALYZE {queryText}",
-                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -344,7 +520,6 @@ public class DbQueryRunner
         var queryExplainAnalyze = await connection
             .QuerySingleAsync<string>(new CommandDefinition(
                 commandText: $"EXPLAIN ANALYZE {queryText}",
-                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -408,7 +583,6 @@ public class DbQueryRunner
         var queryExplainAnalyzeResults = await connection
             .QueryAsync(new CommandDefinition(
                 commandText: $"ANALYZE {queryText}",
-                commandTimeout:QueryCommandTimeoutInSeconds,
                 cancellationToken: cancellationToken))
             .ConfigureAwait(false);
         
@@ -416,6 +590,66 @@ public class DbQueryRunner
 
         var cardinalities = queryExplainAnalyzeResults.Select(q => ((double) q.rows, (double) q.r_rows)).ToList();
         return cardinalities;
+    }
+
+    public async Task<int> RunSqlServerCountQuery(string queryText, CancellationToken cancellationToken)
+    {
+        await using var connection = new SqlConnection(_databaseConnectionStringsOptions.Value.SqlServer);
+
+        var count = await connection
+            .QuerySingleAsync<int>(new CommandDefinition(
+                commandText: queryText,
+                cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        _logger.LogInformation("Output: {output}", count);
+
+        return count;
+    }
+
+    public async Task<int> RunPostgreSqlCountQuery(string queryText, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(_databaseConnectionStringsOptions.Value.PostgreSql);
+
+        var count = await connection
+            .QuerySingleAsync<int>(new CommandDefinition(
+                commandText: queryText,
+                cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        _logger.LogInformation("Output: {output}", count);
+
+        return count;
+    }
+
+    public async Task<int> RunMySqlCountQuery(string queryText, CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_databaseConnectionStringsOptions.Value.MySql);
+
+        var count = await connection
+            .QuerySingleAsync<int>(new CommandDefinition(
+                commandText: queryText,
+                cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        _logger.LogInformation("Output: {output}", count);
+
+        return count;
+    }
+
+    public async Task<int> RunMariaDbCountQuery(string queryText, CancellationToken cancellationToken)
+    {
+        await using var connection = new MySqlConnection(_databaseConnectionStringsOptions.Value.MariaDb);
+
+        var count = await connection
+            .QuerySingleAsync<int>(new CommandDefinition(
+                commandText: queryText,
+                cancellationToken: cancellationToken))
+            .ConfigureAwait(false);
+
+        _logger.LogInformation("Output: {output}", count);
+
+        return count;
     }
 }
 
