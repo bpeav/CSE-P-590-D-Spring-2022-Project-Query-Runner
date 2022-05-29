@@ -252,11 +252,11 @@ public class Worker : IHostedService
 
         await using var countWriter = new StreamWriter(Path.Combine(testResultsDirectoryInfo.FullName, $"{fileTimeString}_count_test_results.csv"));
         await using var countCsv = new CsvWriter(countWriter, CultureInfo.InvariantCulture);
-        await countCsv.WriteRecordsAsync(cardinalityData, cancellationToken).ConfigureAwait(false);
+        await countCsv.WriteRecordsAsync(jobCountQueryData, cancellationToken).ConfigureAwait(false);
 
         await using var skippedWriter = new StreamWriter(Path.Combine(testResultsDirectoryInfo.FullName, $"{fileTimeString}_skipped_test_results.csv"));
         await using var skippedCsv = new CsvWriter(skippedWriter, CultureInfo.InvariantCulture);
-        await skippedCsv.WriteRecordsAsync(cardinalityData, cancellationToken).ConfigureAwait(false);
+        await skippedCsv.WriteRecordsAsync(skippedQueries, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task StopAsync(CancellationToken cancellationToken)
@@ -342,7 +342,7 @@ public class DbQueryRunner
     private readonly IOptions<DatabaseConnectionStrings> _databaseConnectionStringsOptions;
     
     private const int StatsCommandTimeoutInSeconds = 600;
-    private const int QueryCommandTimeoutInSeconds = 180;
+    private const int QueryCommandTimeoutInSeconds = 600;
 
     public DbQueryRunner(ILogger<DbQueryRunner> logger,
         IOptions<DatabaseConnectionStrings> _databaseConnectionStringsOptions)
