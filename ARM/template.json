@@ -1,0 +1,153 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "base_db_name": {
+            "defaultValue": "imdb",
+            "type": "string"
+        },
+        "region": {
+            "defaultValue": "westus",
+            "type": "string"
+        },
+        "admin_login": {
+            "defaultValue": "usernamehere",
+            "type": "string"
+        },
+        "admin_password": {
+            "defaultValue": "",
+            "type": "securestring"
+        }
+    },
+    "variables": {
+        "mssql_server_name": "[concat(parameters('base_db_name'), '-mssql-srvr')]",
+        "mssql_database_name": "[concat(parameters('base_db_name'), '-mssql-db')]",
+        "mariadb_server_name": "[concat(parameters('base_db_name'), '-mariadb-srvr')]",
+        "postgresql_server_name": "[concat(parameters('base_db_name'), '-postgresql-srvr')]",
+        "mysql_server_name": "[concat(parameters('base_db_name'), '-mysql-srvr')]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.DBforMariaDB/servers",
+            "apiVersion": "2018-06-01",
+            "name": "[variables('mariadb_server_name')]",
+            "location": "[parameters('region')]",
+            "sku": {
+                "name": "GP_Gen5_2",
+                "tier": "GeneralPurpose",
+                "family": "Gen5",
+                "capacity": 2
+            },
+            "properties": {
+                "storageProfile": {
+                    "storageMB": 51200,
+                    "backupRetentionDays": 7,
+                    "geoRedundantBackup": "Disabled",
+                    "storageAutogrow": "Disabled"
+                },
+                "version": "10.3",
+                "sslEnforcement": "Enabled",
+                "minimalTlsVersion": "TLSEnforcementDisabled",
+                "publicNetworkAccess": "Enabled",
+                "administratorLogin": "[parameters('admin_login')]",
+                "administratorLoginPassword": "[parameters('admin_password')]"
+            }
+        },
+        {
+            "type": "Microsoft.DBforMySQL/servers",
+            "apiVersion": "2017-12-01",
+            "name": "[variables('mysql_server_name')]",
+            "location": "[parameters('region')]",
+            "sku": {
+                "name": "GP_Gen5_2",
+                "tier": "GeneralPurpose",
+                "family": "Gen5",
+                "capacity": 2
+            },
+            "properties": {
+                "storageProfile": {
+                    "storageMB": 51200,
+                    "backupRetentionDays": 7,
+                    "geoRedundantBackup": "Disabled",
+                    "storageAutogrow": "Disabled"
+                },
+                "version": "8.0",
+                "sslEnforcement": "Enabled",
+                "minimalTlsVersion": "TLSEnforcementDisabled",
+                "infrastructureEncryption": "Disabled",
+                "publicNetworkAccess": "Enabled",
+                "administratorLogin": "[parameters('admin_login')]",
+                "administratorLoginPassword": "[parameters('admin_password')]"
+            }
+        },
+        {
+            "type": "Microsoft.DBforPostgreSQL/servers",
+            "apiVersion": "2017-12-01",
+            "name": "[variables('postgresql_server_name')]",
+            "location": "[parameters('region')]",
+            "sku": {
+                "name": "GP_Gen5_2",
+                "tier": "GeneralPurpose",
+                "family": "Gen5",
+                "capacity": 2
+            },
+            "properties": {
+                "storageProfile": {
+                    "storageMB": 51200,
+                    "backupRetentionDays": 7,
+                    "geoRedundantBackup": "Disabled",
+                    "storageAutogrow": "Disabled"
+                },
+                "version": "11",
+                "sslEnforcement": "Enabled",
+                "minimalTlsVersion": "TLS1_2",
+                "infrastructureEncryption": "Disabled",
+                "publicNetworkAccess": "Enabled",
+                "administratorLogin": "[parameters('admin_login')]",
+                "administratorLoginPassword": "[parameters('admin_password')]"
+            }
+        },
+        {
+            "type": "Microsoft.Sql/servers",
+            "apiVersion": "2021-11-01-preview",
+            "name": "[variables('mssql_server_name')]",
+            "location": "[parameters('region')]",
+            "kind": "v12.0",
+            "properties": {
+                "administratorLogin": "[parameters('admin_login')]",
+                "administratorLoginPassword": "[parameters('admin_password')]",
+                "version": "12.0",
+                "minimalTlsVersion": "1.2",
+                "publicNetworkAccess": "Enabled",
+                "restrictOutboundNetworkAccess": "Disabled"
+            }
+        },
+        {
+            "type": "Microsoft.Sql/servers/databases",
+            "apiVersion": "2021-11-01-preview",
+            "name": "[concat(variables('mssql_server_name'), '/', variables('mssql_database_name'))]",
+            "location": "[parameters('region')]",
+            "dependsOn": [
+                "[resourceId('Microsoft.Sql/servers', variables('mssql_server_name'))]"
+            ],
+            "sku": {
+                "name": "GP_Gen5",
+                "tier": "GeneralPurpose",
+                "family": "Gen5",
+                "capacity": 2
+            },
+            "kind": "v12.0,user,vcore",
+            "properties": {
+                "collation": "SQL_Latin1_General_CP1_CI_AS",
+                "maxSizeBytes": 53687091200,
+                "catalogCollation": "SQL_Latin1_General_CP1_CI_AS",
+                "zoneRedundant": false,
+                "licenseType": "LicenseIncluded",
+                "readScale": "Disabled",
+                "requestedBackupStorageRedundancy": "Local",
+                "maintenanceConfigurationId": "/subscriptions/f93e158a-2dcb-4e43-a579-e393df5e1b6d/providers/Microsoft.Maintenance/publicMaintenanceConfigurations/SQL_Default",
+                "isLedgerOn": false
+            }
+        }
+    ]
+}
